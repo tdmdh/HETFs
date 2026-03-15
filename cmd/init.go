@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -12,23 +10,12 @@ import (
 // initCmd represents the init command
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Starts the IBKR Gateway via Docker and verifies connectivity",
-	Long: `Starts the ghcr.io/rsjethani/ibkr-gateway Docker container
-using docker-compose, waits for it to boot, and verifies the /auth/status endpoint.`,
+	Short: "Verifies connectivity and authentication to a running IBKR Gateway",
+	Long: `Verifies the /auth/status endpoint of a running IBKR Client Portal Gateway.
+If the gateway is active but unauthenticated, it prompts the user to log in.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("🚀 Starting IBKR Gateway Docker container...")
+		fmt.Printf("⏳ Polling Gateway at %s (waiting up to 60 seconds)...\n", gatewayURL)
 
-		// Run docker-compose up -d
-		upCmd := exec.Command("docker-compose", "up", "-d")
-		upCmd.Stdout = os.Stdout
-		upCmd.Stderr = os.Stderr
-		if err := upCmd.Run(); err != nil {
-			return fmt.Errorf("failed to start docker container: %w", err)
-		}
-
-		fmt.Println("⏳ Waiting for Gateway to boot (this may take 15-30 seconds)...")
-
-		// Poll for gateway readiness
 		maxRetries := 30
 		delay := 2 * time.Second
 		
@@ -36,10 +23,6 @@ using docker-compose, waits for it to boot, and verifies the /auth/status endpoi
 		var authMessage string
 		
 		for i := 1; i <= maxRetries; i++ {
-			time.Sleep(delay)
-			
-			// We use the CheckAuthStatus method. 
-			// If it returns an error, the server isn't quite up yet or is refusing connections
 			status, err := ibkrClient.CheckAuthStatus(cmd.Context())
 			
 			if err == nil {
@@ -55,15 +38,15 @@ using docker-compose, waits for it to boot, and verifies the /auth/status endpoi
 				break
 			}
 			
-			// Print a dot to show progress
 			fmt.Print(".")
 			authMessage = err.Error()
+			time.Sleep(delay)
 		}
 
 		if !authSuccess {
 			fmt.Printf("\n\nCould not verify authentication within the timeout period.\n")
 			fmt.Printf("Last connection error: %s\n", authMessage)
-			fmt.Printf("\nPlease ensure you navigate to %s in your browser and log in.\n", gatewayURL)
+			fmt.Printf("\nPlease ensure you have started an IBKR Client Portal Gateway and navigate to %s to log in.\n", gatewayURL)
 		}
 
 		return nil
