@@ -8,16 +8,16 @@ import (
 	"github.com/tdmdh/HETFs/internal/domain"
 )
 
-// ETFRepository defines the persistence contract for ETF records.
+// ETFRepository defines the persistence contract for mapping records.
 type ETFRepository interface {
-	// UpsertETF inserts or replaces a single ETF.
-	UpsertETF(ctx context.Context, etf domain.ETF) error
-	// UpsertETFs inserts or replaces multiple ETFs in a single transaction.
-	UpsertETFs(ctx context.Context, etfs []domain.ETF) error
-	// ListETFs returns ETFs filtered by exchange.
-	ListETFs(ctx context.Context, exchange string) ([]domain.ETF, error)
-	// ListAllETFs returns every stored ETF.
-	ListAllETFs(ctx context.Context) ([]domain.ETF, error)
+	// UpsertContract caches a contract mapping.
+	UpsertContract(ctx context.Context, contract domain.Contract) error
+	// UpsertContracts bulk-caches mappings.
+	UpsertContracts(ctx context.Context, contracts []domain.Contract) error
+	// GetContractBySymbol finds a cached contract.
+	GetContractBySymbol(ctx context.Context, symbol string) (*domain.Contract, error)
+	// ListAllContracts returns every cached contract.
+	ListAllContracts(ctx context.Context) ([]domain.Contract, error)
 }
 
 // sqliteETFRepo implements ETFRepository backed by SQLite.
@@ -30,22 +30,23 @@ func NewETFRepository(db *sql.DB) ETFRepository {
 	return &sqliteETFRepo{db: db}
 }
 
-func (r *sqliteETFRepo) UpsertETF(ctx context.Context, etf domain.ETF) error {
+func (r *sqliteETFRepo) UpsertContract(ctx context.Context, contract domain.Contract) error {
 	const query = `
-INSERT INTO etfs (symbol, isin, exchange, currency)
+INSERT INTO contracts (conid, symbol, company_name, exchange)
 VALUES (?, ?, ?, ?)
-ON CONFLICT(isin, exchange) DO UPDATE SET
-    symbol   = excluded.symbol,
-    currency = excluded.currency;`
+ON CONFLICT(conid) DO UPDATE SET
+    symbol       = excluded.symbol,
+    company_name = excluded.company_name,
+    exchange     = excluded.exchange;`
 
-	_, err := r.db.ExecContext(ctx, query, etf.Symbol, etf.ISIN, etf.Exchange, etf.Currency)
+	_, err := r.db.ExecContext(ctx, query, contract.ConID, contract.Symbol, contract.CompanyName, contract.Exchange)
 	if err != nil {
-		return fmt.Errorf("upsert etf %s: %w", etf.Symbol, err)
+		return fmt.Errorf("upsert contract %v: %w", contract.ConID, err)
 	}
 	return nil
 }
 
-func (r *sqliteETFRepo) UpsertETFs(ctx context.Context, etfs []domain.ETF) error {
+func (r *sqliteETFRepo) UpsertContracts(ctx context.Context, contracts []domain.Contract) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -53,11 +54,12 @@ func (r *sqliteETFRepo) UpsertETFs(ctx context.Context, etfs []domain.ETF) error
 	defer tx.Rollback() //nolint:errcheck
 
 	const query = `
-INSERT INTO etfs (symbol, isin, exchange, currency)
+INSERT INTO contracts (conid, symbol, company_name, exchange)
 VALUES (?, ?, ?, ?)
-ON CONFLICT(isin, exchange) DO UPDATE SET
-    symbol   = excluded.symbol,
-    currency = excluded.currency;`
+ON CONFLICT(conid) DO UPDATE SET
+    symbol       = excluded.symbol,
+    company_name = excluded.company_name,
+    exchange     = excluded.exchange;`
 
 	stmt, err := tx.PrepareContext(ctx, query)
 	if err != nil {
@@ -65,9 +67,9 @@ ON CONFLICT(isin, exchange) DO UPDATE SET
 	}
 	defer stmt.Close()
 
-	for _, etf := range etfs {
-		if _, err := stmt.ExecContext(ctx, etf.Symbol, etf.ISIN, etf.Exchange, etf.Currency); err != nil {
-			return fmt.Errorf("upsert etf %s: %w", etf.Symbol, err)
+	for _, c := range contracts {
+		if _, err := stmt.ExecContext(ctx, c.ConID, c.Symbol, c.CompanyName, c.Exchange); err != nil {
+			return fmt.Errorf("upsert contract %v: %w", c.ConID, err)
 		}
 	}
 
@@ -77,33 +79,38 @@ ON CONFLICT(isin, exchange) DO UPDATE SET
 	return nil
 }
 
-func (r *sqliteETFRepo) ListETFs(ctx context.Context, exchange string) ([]domain.ETF, error) {
-	const query = `SELECT id, symbol, isin, exchange, currency FROM etfs WHERE exchange = ? ORDER BY symbol;`
-	return r.queryETFs(ctx, query, exchange)
+func (r *sqliteETFRepo) GetContractBySymbol(ctx context.Context, symbol string) (*domain.Contract, error) {
+	const query = `SELECT id, conid, symbol, company_name, exchange FROM contracts WHERE symbol = ? LIMIT 1;`
+	row := r.db.QueryRowContext(ctx, query, symbol)
+
+	var c domain.Contract
+	if err := row.Scan(&c.ID, &c.ConID, &c.Symbol, &c.CompanyName, &c.Exchange); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // not found
+		}
+		return nil, fmt.Errorf("scan contract: %w", err)
+	}
+	return &c, nil
 }
 
-func (r *sqliteETFRepo) ListAllETFs(ctx context.Context) ([]domain.ETF, error) {
-	const query = `SELECT id, symbol, isin, exchange, currency FROM etfs ORDER BY exchange, symbol;`
-	return r.queryETFs(ctx, query)
-}
-
-func (r *sqliteETFRepo) queryETFs(ctx context.Context, query string, args ...any) ([]domain.ETF, error) {
-	rows, err := r.db.QueryContext(ctx, query, args...)
+func (r *sqliteETFRepo) ListAllContracts(ctx context.Context) ([]domain.Contract, error) {
+	const query = `SELECT id, conid, symbol, company_name, exchange FROM contracts ORDER BY symbol;`
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("query etfs: %w", err)
+		return nil, fmt.Errorf("query contracts: %w", err)
 	}
 	defer rows.Close()
 
-	var etfs []domain.ETF
+	var contracts []domain.Contract
 	for rows.Next() {
-		var e domain.ETF
-		if err := rows.Scan(&e.ID, &e.Symbol, &e.ISIN, &e.Exchange, &e.Currency); err != nil {
-			return nil, fmt.Errorf("scan etf: %w", err)
+		var c domain.Contract
+		if err := rows.Scan(&c.ID, &c.ConID, &c.Symbol, &c.CompanyName, &c.Exchange); err != nil {
+			return nil, fmt.Errorf("scan contract: %w", err)
 		}
-		etfs = append(etfs, e)
+		contracts = append(contracts, c)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows iteration: %w", err)
 	}
-	return etfs, nil
+	return contracts, nil
 }

@@ -32,6 +32,8 @@ go.work.sum
 # .vscode/
 
 PLAN.md
+PLAN2.md
+
 
 halalctl.db-shm
 halalctl.db-wal

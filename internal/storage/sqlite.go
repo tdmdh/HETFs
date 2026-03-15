@@ -31,18 +31,20 @@ func NewSQLiteDB(dbPath string) (*sql.DB, error) {
 
 // migrate runs all schema migrations.
 func migrate(db *sql.DB) error {
-	const createETFs = `
-CREATE TABLE IF NOT EXISTS etfs (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    symbol   TEXT    NOT NULL,
-    isin     TEXT    NOT NULL,
-    exchange TEXT    NOT NULL,
-    currency TEXT    NOT NULL,
-    UNIQUE(isin, exchange)
+	// Drop old table to migrate clean from Phase 1
+	db.Exec("DROP TABLE IF EXISTS etfs")
+
+	const createContracts = `
+CREATE TABLE IF NOT EXISTS contracts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    conid        INTEGER NOT NULL UNIQUE,
+    symbol       TEXT    NOT NULL,
+    company_name TEXT    NOT NULL,
+    exchange     TEXT    NOT NULL
 );`
 
-	if _, err := db.Exec(createETFs); err != nil {
-		return fmt.Errorf("create etfs table: %w", err)
+	if _, err := db.Exec(createContracts); err != nil {
+		return fmt.Errorf("create contracts table: %w", err)
 	}
 	return nil
 }
