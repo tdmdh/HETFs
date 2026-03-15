@@ -46,7 +46,13 @@ It interfaces directly with the IBKR Client Portal Gateway.`,
 		// Initialize IBKR Client
 		ibkrClient = ibkr.NewClient(gatewayURL)
 
-		// Check Auth Status (Ensure Gateway is reachable and authenticated)
+		// If the command is 'init', we skip the strict auth check and tickler
+		// because the 'init' command's job is to start the server!
+		if cmd.Name() == "init" {
+			return nil
+		}
+
+		// Check Auth Status for all other commands
 		res, err := ibkrClient.CheckAuthStatus(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("failed to reach gateway at %s: %w", gatewayURL, err)
