@@ -33,7 +33,6 @@ go.work.sum
 
 PLAN.md
 PLAN2.md
-bin/
 
 halalctl.db-shm
 halalctl.db-wal

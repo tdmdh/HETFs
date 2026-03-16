@@ -41,25 +41,30 @@ If the gateway is active but unauthenticated, it prompts the user to log in.`,
 		
 		var authSuccess bool
 		var authMessage string
+		var promptShown bool
 		
 		for i := 1; i <= maxRetries; i++ {
 			status, err := ibkrClient.CheckAuthStatus(cmd.Context())
 			
-			if err == nil {
-				fmt.Println("\n✅ Gateway is reachable and responding!")
-				
-				if status.Authenticated {
-					fmt.Println("✅ Gateway is AUTHENTICATED. Ready to serve requests.")
-					authSuccess = true
-				} else {
-					fmt.Println("⚠️  Gateway is NOT authenticated yet.")
-					fmt.Printf("   Please visit: %s to log in to Interactive Brokers.\n", gatewayURL)
-				}
+			if err == nil && status.Authenticated {
+				fmt.Println("\n✅ Gateway is AUTHENTICATED. Ready to serve requests.")
+				authSuccess = true
 				break
 			}
 			
+			if err == nil && !promptShown {
+				fmt.Println("\n✅ Gateway is reachable and responding!")
+				fmt.Println("⚠️  Gateway is NOT authenticated yet.")
+				fmt.Printf("   Please visit: %s to log in to Interactive Brokers.\n   Waiting for you to log in", gatewayURL)
+				promptShown = true
+			}
+			
 			fmt.Print(".")
-			authMessage = err.Error()
+			if err != nil {
+				authMessage = err.Error()
+			} else {
+				authMessage = "Not Authenticated"
+			}
 			time.Sleep(delay)
 		}
 

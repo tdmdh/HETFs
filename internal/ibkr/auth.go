@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 )
 
 // AuthStatus represents the response from /v1/api/iserver/auth/status
@@ -26,6 +27,13 @@ func (c *Client) CheckAuthStatus(ctx context.Context) (*AuthStatus, error) {
 		return nil, fmt.Errorf("auth status request: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return &AuthStatus{
+			Authenticated: false,
+			Message:       "401 Unauthorized",
+		}, nil
+	}
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
