@@ -8,9 +8,9 @@ services:
       - "4002:4002"
     environment:
       # These environment variables are required by gnzsnz/ib-gateway to boot IBC
-      # Replace these with your actual Interactive Brokers credentials
-      - TWS_USERID=YOUR_USERNAME_HERE
-      - TWS_PASSWORD=YOUR_PASSWORD_HERE
-      - TRADING_MODE=paper # Set to 'live' or 'paper'
+      # They are securely populated from the .env file in the same directory
+      - TWS_USERID=${TWS_USERID}
+      - TWS_PASSWORD=${TWS_PASSWORD}
+      - TRADING_MODE=${TRADING_MODE:-paper}
       - TZ=UTC
     restart: unless-stopped
