@@ -1,0 +1,16 @@
+services:
+  ibgateway:
+    image: gnzsnz/ib-gateway:latest
+    container_name: ibkr-gateway
+    ports:
+      - "5000:5000"
+      - "4001:4001"
+      - "4002:4002"
+    environment:
+      # These environment variables are required by gnzsnz/ib-gateway to boot IBC
+      # Replace these with your actual Interactive Brokers credentials
+      - TWS_USERID=YOUR_USERNAME_HERE
+      - TWS_PASSWORD=YOUR_PASSWORD_HERE
+      - TRADING_MODE=paper # Set to 'live' or 'paper'
+      - TZ=UTC
+    restart: unless-stopped
