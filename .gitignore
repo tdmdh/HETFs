@@ -39,3 +39,5 @@ halalctl.db-wal
 halalctl.db
 # Env files
 .env
+
+bin

@@ -78,7 +78,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "halalctl.db", "path to SQLite cache database")
-	rootCmd.PersistentFlags().StringVar(&gatewayURL, "gateway-url", "https://localhost:5000", "URL of the IBKR Client Portal Gateway")
+	rootCmd.PersistentFlags().StringVar(&gatewayURL, "gateway-url", "https://127.0.0.1:5000", "URL of the IBKR Client Portal Gateway")
 }
 
 func startTickleRoutine() {
