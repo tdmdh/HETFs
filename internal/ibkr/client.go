@@ -15,25 +15,37 @@ import (
 
 // Client handles communication with the IBKR Client Portal Gateway.
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-	limiter    *rate.Limiter
+	baseURL       string
+	httpClient    *http.Client
+	limiter       *rate.Limiter
+	sessionCookie string // optional: injected as Cookie header on every request
 }
 
-// NewClient creates a new IBKR Gateway client.
-// By default, the Gateway runs on https://localhost:5000 and uses a self-signed cert.
+// NewClient creates a new IBKR Gateway client without a session cookie.
 func NewClient(baseURL string) *Client {
+	return NewClientWithCookie(baseURL, "")
+}
+
+// NewClientWithCookie creates a new IBKR Gateway client, injecting a browser session cookie
+// on every request. The cookie should be the full raw value from browser DevTools, e.g.:
+//
+//	"x-sess-uuid=0.12345678.1234567890.abcdef01"
+//
+// To obtain it: log in at https://127.0.0.1:5000, open DevTools (F12), go to
+// Application → Cookies → https://127.0.0.1, copy the x-sess-uuid value.
+// Store in .env as SESSION_COOKIE=x-sess-uuid=... (.env is gitignored).
+func NewClientWithCookie(baseURL, sessionCookie string) *Client {
 	// IBKR limits to 10 requests per second. We use 9 to be safe.
-	// We allow a burst of 1 to ensure strict pacing.
 	limiter := rate.NewLimiter(rate.Limit(9.0), 1)
 
-	// Gateway uses a self-signed cert by default, so we must disable verification.
+	// Gateway uses a self-signed cert, so we disable verification.
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 
 	return &Client{
-		baseURL: baseURL,
+		baseURL:       baseURL,
+		sessionCookie: sessionCookie,
 		httpClient: &http.Client{
 			Timeout:   30 * time.Second,
 			Transport: tr,
@@ -43,13 +55,17 @@ func NewClient(baseURL string) *Client {
 }
 
 // Do executes an HTTP request, respecting the rate limit and handling 429 backoffs.
+// If a session cookie is configured it is injected into every outgoing request.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	if c.sessionCookie != "" {
+		req.Header.Set("Cookie", c.sessionCookie)
+	}
+
 	const maxRetries = 3
 	var resp *http.Response
 	var err error
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		// Wait for the rate limiter.
 		if err := c.limiter.Wait(req.Context()); err != nil {
 			return nil, fmt.Errorf("rate limiter wait: %w", err)
 		}
@@ -59,13 +75,12 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 			return nil, err
 		}
 
-		// If 429 Too Many Requests, back off and retry.
 		if resp.StatusCode == http.StatusTooManyRequests {
 			resp.Body.Close()
 			if attempt == maxRetries {
 				break
 			}
-			backoff := time.Duration(1<<attempt) * time.Second // 1s, 2s, 4s
+			backoff := time.Duration(1<<attempt) * time.Second
 			select {
 			case <-time.After(backoff):
 				continue
@@ -74,7 +89,6 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 			}
 		}
 
-		// Success or other failure
 		break
 	}
 
@@ -90,7 +104,7 @@ func (c *Client) Get(ctx context.Context, endpoint string) (*http.Response, erro
 	return c.Do(req)
 }
 
-// Post is a convenience method for POST requests with JSON payload.
+// Post is a convenience method for POST requests with a JSON payload.
 func (c *Client) Post(ctx context.Context, endpoint string, body any) (*http.Response, error) {
 	var bodyReader io.Reader
 	if body != nil {
@@ -109,8 +123,7 @@ func (c *Client) Post(ctx context.Context, endpoint string, body any) (*http.Res
 	return c.Do(req)
 }
 
-// PostForm is a convenience method for POST requests without a body (or empty body text).
-// Sometimes IBKR wants form or empty post.
+// PostEmpty is a convenience method for POST requests without a body.
 func (c *Client) PostEmpty(ctx context.Context, endpoint string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+endpoint, nil)
 	if err != nil {

@@ -43,8 +43,10 @@ It interfaces directly with the IBKR Client Portal Gateway.`,
 		}
 		etfRepo = storage.NewETFRepository(db)
 
-		// Initialize IBKR Client
-		ibkrClient = ibkr.NewClient(gatewayURL)
+		// Initialize IBKR Client, injecting browser session cookie if set.
+		// Set SESSION_COOKIE in .env to the raw cookie from your browser after logging in.
+		sessionCookie := os.Getenv("SESSION_COOKIE")
+		ibkrClient = ibkr.NewClientWithCookie(gatewayURL, sessionCookie)
 
 		// If the command is 'init', we skip the strict auth check and tickler
 		// because the 'init' command's job is to start the server!
